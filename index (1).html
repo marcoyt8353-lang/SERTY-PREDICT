@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dice Predictor</title>
+<style>
+:root{--bg:#f4f5f9;--card:#fff;--text:#1b1d2a;--muted:#6b7084;--border:#d9dce8;--accent:#5b5bf0;--sq:#b9bcc9}
+@media (prefers-color-scheme: dark){:root{color-scheme:dark;--bg:#12131a;--card:#1c1e2a;--text:#eef0fa;--muted:#9ca0b8;--border:#2f3244;--accent:#7c7cff;--sq:#4a4d5e}}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;justify-content:center;padding:32px 16px}
+main{width:100%;max-width:520px;text-align:center}
+h1{font-size:clamp(2rem,8vw,3rem);letter-spacing:.08em;margin:0 0 28px;font-weight:800}
+.card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:20px;margin-bottom:20px}
+label{display:block;text-align:left;font-weight:700;margin-bottom:8px}
+.bar{display:flex;gap:8px}
+input{flex:1;min-width:0;padding:14px 16px;font-size:1.05rem;border-radius:12px;border:1px solid var(--border);background:var(--bg);color:var(--text);outline:none}
+input:focus{border-color:var(--accent)}
+button{padding:0 18px;border:0;border-radius:12px;background:var(--accent);color:#fff;font-size:1rem;font-weight:700;cursor:pointer}
+h2{font-size:1rem;letter-spacing:.1em;margin:0 0 16px;color:var(--muted);font-weight:700;text-transform:uppercase}
+.row{display:flex;justify-content:center;gap:14px;flex-wrap:wrap}
+.sq{width:72px;height:72px;border-radius:12px;background:var(--sq)}
+.cell{display:flex;flex-direction:column;align-items:center;gap:6px;font-weight:700}
+.cell small{color:var(--muted);font-weight:400}
+.note{font-size:.85rem;color:var(--muted);margin:12px 0 0}
+#msg{color:#e53935}
+</style>
+</head>
+<body>
+<main>
+  <h1>DICE PREDICTOR</h1>
+  <div class="card">
+    <label for="id">ID:</label>
+    <div class="bar"><input id="id" type="text" placeholder="Escribe el ID" autocomplete="off"><button id="go">Buscar</button></div>
+    <p class="note" id="msg"></p>
+  </div>
+  <div class="card">
+    <h2>Current Colors:</h2>
+    <div class="row" id="cur"></div>
+  </div>
+  <div class="card">
+    <h2>NEXT POSIBLE 2 COLORS</h2>
+    <div class="row" id="pred"></div>
+    <p class="note" id="info"></p>
+  </div>
+</main>
+<script>
+const NAMES=['red','blue','green','gold','darkorange','purple'];
+const HEX={red:'#e53935',blue:'#1e88e5',green:'#43a047',gold:'#fdd835',darkorange:'#fb8c00',purple:'#8e24aa'};
+const LABEL={red:'Rojo',blue:'Azul',green:'Verde',gold:'Amarillo',darkorange:'Naranja',purple:'Morado'};
+const $=x=>document.getElementById(x);
+let timer=null,curId='';
+
+function predict(rolls){
+  const sc=NAMES.map(k=>{
+    let miss=0;
+    for(let i=rolls.length-1;i>=0;i--){if(rolls[i].includes(k))break;miss++}
+    let tot=0;
+    rolls.forEach(r=>r.forEach(c=>{if(c===k)tot++}));
+    return miss+1/(1+tot);
+  });
+  const t=sc.reduce((a,b)=>a+b,0);
+  return NAMES.map((k,i)=>[k,sc[i]/t*100]).sort((a,b)=>b[1]-a[1]).slice(0,2);
+}
+const sq=c=>'<div class="sq" style="background:'+(HEX[c]||'')+'"></div>';
+function gray(el,n){el.innerHTML='<div class="sq"></div>'.repeat(n)}
+
+function render(rows){
+  if(!rows.length){gray($('cur'),4);gray($('pred'),2);return}
+  $('cur').innerHTML=rows[rows.length-1].map(sq).join('');
+  $('pred').innerHTML=predict(rows).map(([c,p])=>'<div class="cell">'+sq(c)+'<span>'+p.toFixed(1)+'%</span><small>'+LABEL[c]+'</small></div>').join('');
+  let hits=0,tot=0;
+  for(let i=1;i<rows.length;i++){
+    const p=predict(rows.slice(0,i)).map(x=>x[0]);
+    tot++;if(p.some(c=>rows[i].includes(c)))hits++;
+  }
+  $('info').textContent='Rolls: '+rows.length+(tot?' | Aciertos: '+hits+'/'+tot+' ('+(hits/tot*100).toFixed(0)+'%)':'');
+}
+
+async function load(){
+  try{
+    const r=await fetch('/api/history?id='+encodeURIComponent(curId),{cache:'no-store'});
+    const d=await r.json();
+    if(d.error){$('msg').textContent=d.error;return}
+    $('msg').textContent=d.message||'';
+    render(d.rows||[]);
+  }catch(e){$('msg').textContent='No se pudo cargar. Intenta de nuevo.'}
+}
+function go(){
+  curId=$('id').value.trim();
+  if(!/^[a-zA-Z0-9]+$/.test(curId)){$('msg').textContent='Escribe un ID valido (solo letras y numeros).';return}
+  $('msg').textContent='';
+  clearInterval(timer);
+  load();
+  timer=setInterval(load,10000);
+}
+$('go').onclick=go;
+$('id').addEventListener('keydown',e=>{if(e.key==='Enter')go()});
+gray($('cur'),4);gray($('pred'),2);
+</script>
+</body>
+</html>
